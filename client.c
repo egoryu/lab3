@@ -2,25 +2,32 @@
 #include <fcntl.h>
 #include <unistd.h>
 
-#define BUFFER_SIZE 1024
+#define BUFFER_SIZE 4096
 #define DEBUGFS_PATH "/sys/kernel/debug/lab/memblock_dentry_info"
 
-int main() {
+int main(int argc, char *argv[]) {
     int fd;
     char buffer[BUFFER_SIZE];
     
-    // Открываем файловый дескриптор для интерфейса модуля ядра
+    if (argc != 3) {
+        perror("Неправильное количество аргументов\n");
+        return 1;
+    }
+
     fd = open(DEBUGFS_PATH, O_RDWR);
     if (fd < 0) {
         perror("Ошибка открытия файла интерфейса");
         return 1;
     }
     
-    // Отправляем запрос на модуль ядра
-    const char *request = "memblock_type";
-    write(fd, request, strlen(request));
+    sprintf(buffer, "%s %s", argv[1], argv[2]);
+    ssize_t bytesWrite = write(fd, buffer, strlen(request));
+    if (bytesWrite < 0) {
+        perror("Ошибка записи запроса модулю ядра");
+        close(fd);
+        return 1;
+    }
     
-    // Читаем ответ от модуля ядра
     ssize_t bytesRead = read(fd, buffer, BUFFER_SIZE);
     if (bytesRead < 0) {
         perror("Ошибка чтения ответа от модуля ядра");
@@ -28,10 +35,8 @@ int main() {
         return 1;
     }
     
-    // Выводим результат на уровень пользователя
     printf("Результат: %s\n", buffer);
     
-    // Закрываем файловый дескриптор
     close(fd);
     
     return 0;

@@ -10,47 +10,47 @@
 #include <linux/dcache.h>
 
 #define MAX_PATH_LEN 256
+#define BUFFER_SIZE 4096
 
 static char path_name[MAX_PATH_LEN];
+static int mod = 0, num = 0;
 
 static ssize_t memblock_dentry_read(struct file *filp, char __user *buf, size_t count, loff_t *f_pos)
 {
     struct dentry *dentry;
     struct path path;
+    char buffer[BUFFER_SIZE];
     struct memblock_type *type;
-    pgoff_t index = 0;
-    struct page *page;
-    int ret;
 
 
-    if (kern_path(path_name, LOOKUP_FOLLOW, &path)) {
-        printk(KERN_ERR "Failed to get path %s\n", path);
+    if (mod) { 
+        if (kern_path(path_name, LOOKUP_FOLLOW, &path)) {
+            printk(KERN_ERR "Failed to get path %s\n", path);
+            return -EFAULT;
+        }
+
+        dentry = path.dentry;
+
+        sprintf(buffer + strlen(buffer), "короткое имя файла: %s\n", dentry->d_iname);
+        sprintf(buffer + strlen(buffer), "номер inode: %s\n", dentry->d_inode->i_ino);
+        sprintf(buffer + strlen(buffer), "является ли объект точкой монтирования: %s\n", d_mountpoint(dentry));
+        sprintf(buffer + strlen(buffer), "счетчик использования: %s\n", dentry->d_count);
+    } else {
+        type = &memblock.memory;
+
+        sprintf(buffer + strlen(buffer), "количество областей памяти внутри текущего блока памяти: %s\n", type->cnt);
+        sprintf(buffer + strlen(buffer), "размер всех областей памяти: %s\n", type->max);
+        sprintf(buffer + strlen(buffer), "размер выделенного массива областей памяти: %s\n", type->total_size);
+
+        for (int i = 0; i < min(num, type->cnt), i++) {
+            sprintf(buffer + strlen(buffer), "адрес региона %d: %s\n", type->regions[i]->base);
+        }
+    }
+
+    if (copy_to_user(buf, buffer, strlen(buffer))){
         return -EFAULT;
     }
-
-    dentry = path.dentry;
-
-    //type = memblock_get_region_type(page_to_phys(dentry->d_inode->i_mapping->pages->first), PAGE_SIZE);
-    while ((page = find_get_pages(dentry->d_inode->i_mapping, index, 1, NULL)) != NULL) {
-        type = memblock_get_region_type(page_to_phys(page), PAGE_SIZE);
-        if (type) 
-            snprintf(buf + strlen(buf), count - strlen(buf), "page: %d memblock_type: %s\n", index, type->name);
-        index++;
-    }
-
-    /*if (!type) {
-        printk(KERN_ERR "Failed to get memblock_type for %s\n", path);
-        return -EFAULT;
-    }
-
-    ret = snprintf(buf, count, "memblock_type: %s\n", type->name);
-    if (ret >= count)
-        return -ENOSPC;*/
-
-    ret = snprintf(buf + strlen(buf), count - strlen(buf), "dentry: %p\n", dentry);
-    if (ret >= count - strlen(buf))
-        return -ENOSPC;
-
+ 
     return strlen(buf);
 }
 
@@ -66,7 +66,13 @@ static ssize_t memblock_dentry_write(struct file *file, const char __user *buffe
         return -EFAULT;
     }
     
-    // Обработка запроса и запись результата в переменную result
+    sscanf(request, "%d", &mod);
+
+    if (mod) {
+        sscanf(request, "%d %s", &mod, path_name);
+    } else {
+        sscanf(request, "%d %d", &mod, &num);
+    }
     
     return count;
 }
