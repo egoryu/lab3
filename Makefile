@@ -1,8 +1,9 @@
+KBUILD_CFLAGS   +=  -g -Wall
 obj-m += driver.o
 all:
-	gcc ./client.c -o client
 	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
 	sudo insmod driver.ko
+	gcc ./client.c -o client
 
 clean:
 	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean
