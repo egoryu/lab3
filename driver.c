@@ -1,7 +1,6 @@
 
 #include <linux/module.h>
 #include <linux/kernel.h>
-#include <linux/init.h>
 #include <linux/mount.h>
 #include <linux/path.h>
 #include <linux/namei.h>
@@ -16,40 +15,64 @@
 #include <linux/mutex.h>
 
 #define MAX_PATH_LEN 256
-#define BUFFER_SIZE 1000
+#define BUFFER_SIZE 900
 
 static DEFINE_MUTEX(mutex);
-//extern struct memblock memblock;
 static struct dentry *root;
 static char path_name[MAX_PATH_LEN];
-static int mod = 1, num = 0;
+static int mod = 0, num = 0;
+
+#define INIT_MEMBLOCK_REGIONS   128
+
+#define MEMBLOCK_ALLOC_ANYWHERE (~(phys_addr_t)0)
+
+static struct memblock_region memblock_memory_init_regions[INIT_MEMBLOCK_REGIONS] __initdata_memblock;
+static struct memblock_region memblock_reserved_init_regions[INIT_MEMBLOCK_REGIONS] __initdata_memblock;
+#ifdef CONFIG_HAVE_MEMBLOCK_PHYS_MAP
+static struct memblock_region memblock_physmem_init_regions[INIT_PHYSMEM_REGIONS] __initdata_memblock;
+#endif
+
+struct memblock memblock __initdata_memblock = {
+    .memory.regions        = memblock_memory_init_regions,
+    .memory.cnt            = 1,
+    .memory.max            = INIT_MEMBLOCK_REGIONS,
+
+    .reserved.regions    = memblock_reserved_init_regions,
+    .reserved.cnt        = 1,
+    .reserved.max        = INIT_MEMBLOCK_REGIONS,
+
+#ifdef CONFIG_HAVE_MEMBLOCK_PHYS_MAP
+    .physmem.regions    = memblock_physmem_init_regions,
+    .physmem.cnt        = 1,
+    .physmem.max        = INIT_PHYSMEM_REGIONS,
+#endif
+    .bottom_up            = false,
+    .current_limit        = MEMBLOCK_ALLOC_ANYWHERE,
+};
+
+
 
 static ssize_t memblock_dentry_read(struct file *filp, char __user *buf, size_t count, loff_t *f_pos)
 {
     char buffer[BUFFER_SIZE];
-    int len = 0;
-    //struct dentry *dentry;
-    //struct path path;
-    /*struct memblock_type *type;
-    int i;*/
+    struct dentry *dentry;
+    struct path path;
+    struct memblock_type *type;
+    int i;
 
-    printk(KERN_INFO "kek 21\n");
     if (mod) { 
-        /*if (kern_path(path_name, LOOKUP_FOLLOW, &path)) {
-            //printk(KERN_ERR "Failed to get path %s\n", path_name);
+        if (kern_path(path_name, LOOKUP_FOLLOW, &path)) {
+            printk(KERN_ERR "Failed to get path %s\n", path_name);
             return -EFAULT;
         }
 
-        dentry = path.dentry;*/
-        len = sprintf(buffer, "короткое имя файла:\n");
-        printk(KERN_INFO "kek %lu", strlen(buffer));
-        printk(KERN_INFO "kek %s", path_name);
-        //sprintf(buffer + strlen(buffer), "короткое имя файла: %s\n", dentry->d_iname);
-        //sprintf(buffer + strlen(buffer), "номер inode: %lu\n", dentry->d_inode->i_ino);
-        //sprintf(buffer + strlen(buffer), "является ли объект точкой монтирования: %d\n", d_mountpoint(dentry));
-        //sprintf(buffer + strlen(buffer), "счетчик использования: %s\n", dentry->d_count);
+        dentry = path.dentry;
+
+        sprintf(buffer + strlen(buffer), "короткое имя файла: %s\n", dentry->d_iname);
+        sprintf(buffer + strlen(buffer), "номер inode: %lu\n", dentry->d_inode->i_ino);
+        sprintf(buffer + strlen(buffer), "является ли объект точкой монтирования: %d\n", d_mountpoint(dentry));
     } else {
-        /*type = &memblock.memory;
+        type = &memblock.memory;
 
         sprintf(buffer + strlen(buffer), "количество областей памяти внутри текущего блока памяти: %ld\n", type->cnt);
         sprintf(buffer + strlen(buffer), "размер всех областей памяти: %ld\n", type->max);
@@ -57,22 +80,21 @@ static ssize_t memblock_dentry_read(struct file *filp, char __user *buf, size_t 
 
         for (i = 0; i < num; i++) {
             sprintf(buffer + strlen(buffer), "адрес региона %d: %lld\n", i, type->regions[i].base);
-        }*/
+        }
     }
 
     if (copy_to_user(buf, buffer, strlen(buffer))){
-        printk(KERN_INFO "kek lol");
         return -EFAULT;
     }
-    printk(KERN_INFO "kek lol 2");
+
     return strlen(buffer);
 }
 
 static ssize_t memblock_dentry_write(struct file *file, const char __user *buffer, size_t count, loff_t *ppos) {
     char request[BUFFER_SIZE];
+    int len;
     pr_info("WRITING...");
 
-    printk(KERN_INFO "kek\n");
     if (count >= BUFFER_SIZE) {
         return -EINVAL;
     }
@@ -81,14 +103,16 @@ static ssize_t memblock_dentry_write(struct file *file, const char __user *buffe
         return -EFAULT;
     }
     
-    //sscanf(request, "%d", &mod);
+    sscanf(request, "%d", &mod);
 
     if (mod) {
-        //sscanf(request, "%d %s", &mod, path_name);
+        sscanf(request, "%d %d %s", &mod, &len, path_name);
+        strncpy(path_name, path_name, len);
+        path_name[len] = 0;
     } else {
         sscanf(request, "%d %d", &mod, &num);
     }
-    printk(KERN_INFO "kek\n");
+ 
     return count;
 }
 
@@ -115,7 +139,6 @@ static const struct file_operations memblock_dentry_fops = {
 
 static int __init memblock_dentry_info_init(void)
 {
-    printk(KERN_INFO "kek0\n");
     root = debugfs_create_dir("lab20", NULL);
     if (!root) {
         printk(KERN_ERR "Failed to create debugfs directory\n");
